@@ -13,7 +13,11 @@ find_package(catkin REQUIRED COMPONENTS
   roscpp
   rostest
   sensor_msgs
-  tf)
+  tf
+  mavros_msgs
+  std_srvs
+  std_msgs
+)
 
 # This driver uses Boost threads
 find_package(Boost REQUIRED COMPONENTS thread)
@@ -50,7 +54,10 @@ catkin_package(CATKIN_DEPENDS
                  nodelet
                  roscpp
                  sensor_msgs
-                 tf)
+                 tf
+                 mavros_msgs
+                 std_srvs
+                 std_msgs)
 
 include_directories(${catkin_INCLUDE_DIRS}
   ${DC1394_PKGCONF_INCLUDE_DIRS}
@@ -62,6 +69,9 @@ add_subdirectory(src/nodes)
 # install pluginlib definition for the nodelet
 install(FILES camera1394_nodelet.xml
         DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION})
+
+add_executable(camera1394_trigger_ready src/camera1394_trigger_ready.cpp)
+target_link_libraries(camera1394_trigger_ready ${catkin_LIBRARIES})
 
 # driver unit tests
 if (CATKIN_ENABLE_TESTING)
