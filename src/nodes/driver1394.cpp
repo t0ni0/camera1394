@@ -80,13 +80,17 @@ namespace camera1394_driver
     cinfo_(new camera_info_manager::CameraInfoManager(camera_nh_)),
     calibration_matches_(true),
     it_(new image_transport::ImageTransport(camera_nh_)),
-    image_pub_(it_->advertiseCamera("image_raw", 1)),
+    image_pub_(it_->advertiseCamera("image_raw", 10)),
+    ros_trig_wait_pub_(camera_nh.advertise<std_msgs::Int16>("waiting_trigger", 100)),
+    ros_timestamp_sub_(camera_nh.subscribe("/mavros/cam_imu_sync/cam_imu_stamp",
+        1, &Camera1394Driver::bufferTimestamp, this)),
     get_camera_registers_srv_(camera_nh_.advertiseService(
                                 "get_camera_registers",
                                 &Camera1394Driver::getCameraRegisters, this)),
     set_camera_registers_srv_(camera_nh_.advertiseService(
                                 "set_camera_registers",
                                 &Camera1394Driver::setCameraRegisters, this)),
+    trigger_ready_srv_(camera_nh_.serviceClient<std_srvs::Trigger>("trigger_ready")),
     diagnostics_(),
     topic_diagnostics_min_freq_(0.),
     topic_diagnostics_max_freq_(1000.),
@@ -94,8 +98,12 @@ namespace camera1394_driver
 		       diagnostic_updater::FrequencyStatusParam
 		       (&topic_diagnostics_min_freq_,
 			&topic_diagnostics_max_freq_, 0.1, 10),
-		       diagnostic_updater::TimeStampStatusParam())
-  {}
+               diagnostic_updater::TimeStampStatusParam())
+  {
+    image_buffer_.reserve(10);
+    cinfo_buffer_.reserve(10);
+    timestamp_buffer_.reserve(10);
+  }
 
   Camera1394Driver::~Camera1394Driver()
   {}
@@ -505,6 +513,11 @@ namespace camera1394_driver
                  camera_name_.c_str(), request.type, request.offset);
       }
     return success;
+  }
+
+  void Camera1394Driver::bufferTimestamp(const mavros_msgs::CamIMUStamp& msg)
+  {
+
   }
 
 }; // end namespace camera1394_driver

@@ -45,11 +45,17 @@
 #include <dynamic_reconfigure/server.h>
 #include <image_transport/image_transport.h>
 #include <sensor_msgs/CameraInfo.h>
+#include <mavros_msgs/CamIMUStamp.h>
+#include <std_msgs/Int16.h>
+#include <std_srvs/Trigger.h>
 
 #include "dev_camera1394.h"
 #include "camera1394/Camera1394Config.h"
 #include "camera1394/GetCameraRegisters.h"
 #include "camera1394/SetCameraRegisters.h"
+
+#include <vector>
+#include <thread>
 
 typedef camera1394::Camera1394Config Config;
 
@@ -88,6 +94,21 @@ private:
   bool setCameraRegisters(camera1394::SetCameraRegisters::Request &request,
                           camera1394::SetCameraRegisters::Response &response);
 
+  /** mavros VIO functions */
+  void bufferTimestamp(const mavros_msgs::CamIMUStamp& msg);
+  void sendTriggerReady();
+  void sendTriggerWaiting(int exposure_ms);
+
+  void framePublishLoop();
+  void startFramePublisher();
+  void stopFramePublisher();
+
+  unsigned int stampAndPublishImage(unsigned int index);
+  unsigned int findInImgBuffer(unsigned int index);
+
+  std::thread vio_pub_thread_;
+  bool vio_thread_alive_;
+
   /** Non-recursive mutex for serializing callbacks with device polling. */
   boost::mutex mutex_;
 
@@ -114,16 +135,24 @@ private:
   /** image transport interfaces */
   boost::shared_ptr<image_transport::ImageTransport> it_;
   image_transport::CameraPublisher image_pub_;
+  ros::Publisher ros_trig_wait_pub_;
+  ros::Subscriber ros_timestamp_sub_;
 
   /** services for getting/setting camera control and status registers (CSR) */
   ros::ServiceServer get_camera_registers_srv_;
   ros::ServiceServer set_camera_registers_srv_;
+  ros::ServiceClient trigger_ready_srv_;
 
   /** diagnostics updater */
   diagnostic_updater::Updater diagnostics_;
   double topic_diagnostics_min_freq_;
   double topic_diagnostics_max_freq_;
   diagnostic_updater::TopicDiagnostic topic_diagnostics_;
+
+  /** IMU trigger sync buffers */
+  std::vector<sensor_msgs::Image> image_buffer_;
+  std::vector<sensor_msgs::CameraInfo> cinfo_buffer_;
+  std::vector<mavros_msgs::CamIMUStamp> timestamp_buffer_;
 
 }; // end class Camera1394Driver
 

@@ -18,6 +18,7 @@ public:
         cam0_OK_ = false;
         cam1_OK_ = false;
         exposure_ms_ = 0;
+        framerate_ = 30; //** in Hz, default framerate
         triggerClient_ = n_.serviceClient<mavros_msgs::CommandTriggerControl>("/mavros/cmd/trigger_control");
         advertiseService();
         subscribeCameras();
@@ -30,6 +31,10 @@ public:
     void cam0Ready(const std_msgs::Int16ConstPtr &msg)
     {
         exposure_ms_ = msg->data; // Set exposure from cam0
+        if(exposure_ms_ > 1000/framerate_){
+            ROS_WARN("Exposure time %u ms does not allow %u Hz framerate.",
+                     exposure_ms_, framerate_);
+        }
         ROS_INFO("Camera 0 waiting for trigger. Exposure set to %u ms", exposure_ms_);
     }
 
@@ -107,7 +112,7 @@ public:
      */
     int sendTriggerCommand()
     {
-        srv_.request.integration_time = exposure_ms_;
+        srv_.request.integration_time = 1000/framerate_;
         srv_.request.trigger_enable = true;
 
         if (triggerClient_.call(srv_)) {
@@ -137,6 +142,7 @@ private:
     bool cam0_OK_;
     bool cam1_OK_;
     int exposure_ms_;
+    int framerate_;
 
     ros::NodeHandle n_;
 
@@ -152,6 +158,14 @@ private:
 };
 
 
+/**
+ * @brief This application will spin while waiting for the two camera drives to
+ * come up. Once they are alive, the trigger command is sent at a rate of 10Hz
+ * through mavros.
+ * @param argc ros argument count
+ * @param argv ros arguments
+ * @return error code
+ */
 int main(int argc, char **argv)
 {
     ros::init(argc, argv, "StartTrigger");
