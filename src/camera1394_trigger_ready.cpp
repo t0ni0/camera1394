@@ -49,7 +49,7 @@ public:
 
     /**
      * @brief Subscribe to the trigger waiting topics. These topics receive an
-     * Int16 which is the expore in milliseconds requested for the next trigger
+     * Int16 which is the exposure in milliseconds requested for the next trigger
      * pulse.
      */
     void subscribeCameras()
@@ -127,7 +127,7 @@ public:
     }
 
     /**
-     * @brief Advertice the trigger ready services. These services should be
+     * @brief Advertise the trigger ready services. These services should be
      * called when the cameras have been set up and are ready to be triggered.
      */
     void advertiseService()
