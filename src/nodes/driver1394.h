@@ -150,8 +150,8 @@ private:
   diagnostic_updater::TopicDiagnostic topic_diagnostics_;
 
   /** IMU trigger sync buffers */
-  std::vector<sensor_msgs::Image> image_buffer_;
-  std::vector<sensor_msgs::CameraInfo> cinfo_buffer_;
+  std::vector<sensor_msgs::ImagePtr> image_buffer_;
+  std::vector<sensor_msgs::CameraInfoPtr> cinfo_buffer_;
   std::vector<mavros_msgs::CamIMUStamp> timestamp_buffer_;
 
 }; // end class Camera1394Driver

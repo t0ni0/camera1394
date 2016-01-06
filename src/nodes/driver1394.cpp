@@ -68,6 +68,7 @@ namespace camera1394_driver
 
   Camera1394Driver::Camera1394Driver(ros::NodeHandle priv_nh,
                                      ros::NodeHandle camera_nh):
+    vio_thread_alive_(false),
     state_(Driver::CLOSED),
     reconfiguring_(false),
     priv_nh_(priv_nh),
@@ -95,9 +96,9 @@ namespace camera1394_driver
     topic_diagnostics_min_freq_(0.),
     topic_diagnostics_max_freq_(1000.),
     topic_diagnostics_("image_raw", diagnostics_,
-		       diagnostic_updater::FrequencyStatusParam
-		       (&topic_diagnostics_min_freq_,
-			&topic_diagnostics_max_freq_, 0.1, 10),
+               diagnostic_updater::FrequencyStatusParam
+               (&topic_diagnostics_min_freq_,
+            &topic_diagnostics_max_freq_, 0.1, 10),
                diagnostic_updater::TimeStampStatusParam())
   {
     image_buffer_.reserve(10);
@@ -272,7 +273,17 @@ namespace camera1394_driver
     ci->header.stamp = image->header.stamp;
 
     // Publish via image_transport
-    image_pub_.publish(image, ci);
+    //image_pub_.publish(image, ci);
+
+    // Publishing is disabled here because the trigger sync thread will
+    // do that for us. Instead we buffer the image and in camera info
+    // for the sync thread to use.
+    image_buffer_.push_back(image);
+    cinfo_buffer_.push_back(ci);
+
+    if(image_buffer_.size() > 5) image_buffer_.erase(image_buffer_.begin());
+    if(cinfo_buffer_.size() > 5) cinfo_buffer_.erase(cinfo_buffer_.begin());
+
 
     // Notify diagnostics that a message has been published. That will
     // generate a warning if messages are not published at nearly the
@@ -394,6 +405,13 @@ namespace camera1394_driver
   void Camera1394Driver::setup(void)
   {
     srv_.setCallback(boost::bind(&Camera1394Driver::reconfig, this, _1, _2));
+
+    sendTriggerWaiting(config_.exposure);
+
+    startFramePublisher();
+
+    sendTriggerReady();
+
   }
 
 
@@ -401,6 +419,7 @@ namespace camera1394_driver
   void Camera1394Driver::shutdown(void)
   {
     closeCamera();
+    stopFramePublisher();
   }
 
   /** Callback for getting camera control and status registers (CSR) */
@@ -515,9 +534,161 @@ namespace camera1394_driver
     return success;
   }
 
+  /**
+   * @brief Buffers a CamIMUStamp coming from the autopilot through mavros.
+   * @param msg The timestamp to buffer
+   */
   void Camera1394Driver::bufferTimestamp(const mavros_msgs::CamIMUStamp& msg)
   {
+    timestamp_buffer_.push_back(msg);
 
+    // TODO Add half of exposure time
+    // XXX check for dropped timestamp msg
+
+    // Check if buffer exceeds limit size
+    // Throw away oldest image if it does
+    if(timestamp_buffer_.size() > 5){
+        timestamp_buffer_.erase(timestamp_buffer_.begin());
+    }
+
+  }
+
+  /**
+   * @brief Inform the system that the camera driver (this node) is done
+   * setting up and that the camera is ready to be triggered.
+   */
+  void Camera1394Driver::sendTriggerReady()
+  {
+    std_srvs::Trigger sig;
+    if(!trigger_ready_srv_.call(sig)){
+        ROS_ERROR("Failed to call ready-for-trigger");
+    }
+  }
+
+  /**
+   * @brief
+   * @param exposure_ms
+   */
+  void Camera1394Driver::sendTriggerWaiting(int exposure_ms)
+  {
+      std_msgs::Int16 exposure_ready;
+      exposure_ready.data = exposure_ms;
+
+      ros_trig_wait_pub_.publish(exposure_ready);
+  }
+
+  /**
+   * @brief The function which will be run in a seperate thread to publish
+   * correctly timestamped images aligned with IMU data.
+   */
+  void Camera1394Driver::framePublishLoop()
+  {
+    ros::Rate idleDelay(200);
+    // check if buffers are not empty
+    if(image_buffer_.size() && timestamp_buffer_.size()){
+        for(unsigned int i = 0; i < image_buffer_.size() && timestamp_buffer_.size() > 0;) {
+            // If this fails it return 1 which will advance the pointer i.
+            // If this succeeds, i can stay the same value and will point to
+            // a new element since the published ones will be removed.
+            i += stampAndPublishImage(i);
+        }
+    }
+
+    idleDelay.sleep();
+  }
+
+  /**
+   * @brief Start the frame-imu synced image publishing loop (thread)
+   */
+  void Camera1394Driver::startFramePublisher()
+  {
+    vio_thread_alive_ = true;
+    vio_pub_thread_ = std::thread(std::bind(&Camera1394Driver::framePublishLoop,
+                                            this));
+  }
+
+  /**
+   * @brief Stop the frame-imu synce image publishing loop (thread)
+   */
+  void Camera1394Driver::stopFramePublisher()
+  {
+    vio_thread_alive_ = false;
+    if(vio_pub_thread_.joinable()) {
+        vio_pub_thread_.join();
+    }
+    vio_pub_thread_ = std::thread();
+  }
+
+  /**
+   * @brief Change the timestamp of an image to the one sent in by
+   * mavros and then publish it.
+   *
+   * The new timestamp should be one which is matched with an IMU message.
+   * @param Index in the buffers of the image to be published.
+   * @return 0 on success, 1 on failure
+   */
+  unsigned int Camera1394Driver::stampAndPublishImage(unsigned int index)
+  {
+    // find the index of the imu timestamp corresponding to the image we
+    // want to publish
+    int timestamp_index = findInImgBuffer(index);
+
+    // if we found the appropriate timestamp
+    if (timestamp_index) {
+        // Copy corresponding image and time stamps
+        sensor_msgs::ImagePtr image;
+        sensor_msgs::CameraInfoPtr ci;
+        image = image_buffer_.at(index);
+        ci = cinfo_buffer_.at(index);
+
+        // Stamp it
+        image->header.stamp = timestamp_buffer_.at(timestamp_index).frame_stamp;
+        ci->header = image->header;   // Stamp the cam info with the same stamp
+
+        // Publish image in ROS
+        image_pub_.publish(image, ci);
+
+        // Erase the stuff we just published
+        image_buffer_.erase(image_buffer_.begin() + index);
+        cinfo_buffer_.erase(cinfo_buffer_.begin() + index);
+        timestamp_buffer_.erase(timestamp_buffer_.begin() + timestamp_index);
+        return 0;
+    } else {
+        // Failure
+        return 1;
+    }
+  }
+
+  /**
+   * @brief Find the IMU time stamp which corresponds to the image pointed by
+   * the index.
+   *
+   * This is done by matching sequence numbers.
+   *
+   * @param index in the image buffer of the image who's time stamp we want to
+   * find
+   * @return 0 if we can't find it, or the index of the timestamp in the
+   * timestamp buffer
+   */
+  unsigned int Camera1394Driver::findInImgBuffer(unsigned int index)
+  {
+    // Check if we have at least one image in the buffer
+    if(image_buffer_.size() < 1){
+        return 0;
+    }
+
+    unsigned int k = 0;
+    while(k < timestamp_buffer_.size() && ros::ok()){
+        // look for the matching sequence number
+        if(image_buffer_.at(index)->header.seq ==
+                (uint)timestamp_buffer_.at(k).frame_seq_id) {
+            return k;
+        } else {
+            k += 1;
+        }
+    }
+
+    return 0;
   }
 
 }; // end namespace camera1394_driver
