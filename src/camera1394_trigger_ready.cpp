@@ -132,8 +132,8 @@ public:
      */
     void advertiseService()
     {
-        serverCam0_ = n_.advertiseService("cam0/trigger_ready", &TriggerReady::servCam0, this);
-        serverCam1_ = n_.advertiseService("cam1/trigger_ready", &TriggerReady::servCam1, this);
+        serverCam0_ = n_.advertiseService("cam0/camera/trigger_ready", &TriggerReady::servCam0, this);
+        serverCam1_ = n_.advertiseService("cam1/camera/trigger_ready", &TriggerReady::servCam1, this);
     }
 
 

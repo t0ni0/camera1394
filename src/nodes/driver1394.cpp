@@ -33,6 +33,7 @@
 *********************************************************************/
 
 #include <boost/format.hpp>
+#include <sstream>  // debug
 
 #include <driver_base/SensorLevels.h>
 #include <tf/transform_listener.h>
@@ -76,6 +77,7 @@ namespace camera1394_driver
     camera_name_("camera"),
     cycle_(1.0),                        // slow poll when closed
     retries_(0),
+    ros_frame_count_(0),
     dev_(new camera1394::Camera1394()),
     srv_(priv_nh),
     cinfo_(new camera_info_manager::CameraInfoManager(camera_nh_)),
@@ -271,6 +273,7 @@ namespace camera1394_driver
 
     ci->header.frame_id = config_.frame_id;
     ci->header.stamp = image->header.stamp;
+    ci->header.seq = image->header.seq = ros_frame_count_++;
 
     // Publish via image_transport
     //image_pub_.publish(image, ci);
@@ -561,7 +564,8 @@ namespace camera1394_driver
   {
     std_srvs::Trigger sig;
     if(!trigger_ready_srv_.call(sig)){
-        ROS_ERROR("Failed to call ready-for-trigger");
+        ROS_ERROR("Failed to call ready-for-trigger on service: %s",
+                    trigger_ready_srv_.getService().c_str() );
     }
   }
 
@@ -583,18 +587,21 @@ namespace camera1394_driver
    */
   void Camera1394Driver::framePublishLoop()
   {
+    //ROS_INFO("frame publish looped");
     ros::Rate idleDelay(200);
-    // check if buffers are not empty
-    if(image_buffer_.size() && timestamp_buffer_.size()){
-        for(unsigned int i = 0; i < image_buffer_.size() && timestamp_buffer_.size() > 0;) {
-            // If this fails it return 1 which will advance the pointer i.
-            // If this succeeds, i can stay the same value and will point to
-            // a new element since the published ones will be removed.
-            i += stampAndPublishImage(i);
-        }
-    }
 
-    idleDelay.sleep();
+    while( ros::ok() && vio_thread_alive_ ){
+      // check if buffers are not empty
+      if(image_buffer_.size() && timestamp_buffer_.size()){
+          for(unsigned int i = 0; i < image_buffer_.size() && timestamp_buffer_.size() > 0;) {
+              // If this fails it return 1 which will advance the pointer i.
+              // If this succeeds, i can stay the same value and will point to
+              // a new element since the published ones will be removed.
+              i += stampAndPublishImage(i);
+          }
+      }
+      idleDelay.sleep();
+    }
   }
 
   /**
@@ -655,6 +662,7 @@ namespace camera1394_driver
         return 0;
     } else {
         // Failure
+        //ROS_WARN("findInImgBuffer failed");
         return 1;
     }
   }
@@ -687,6 +695,18 @@ namespace camera1394_driver
             k += 1;
         }
     }
+
+    //failure handler
+    std::ostringstream time_seq, img_seq;
+    for(int i = 0; i < timestamp_buffer_.size(); ++i){
+      time_seq << timestamp_buffer_.at(i).frame_seq_id << ' ';
+    }
+
+    for(int i = 0; i < image_buffer_.size(); ++i){
+      img_seq << image_buffer_.at(i)->header.seq << ' ';
+    }
+
+    //ROS_INFO("findInImgBuffer seq numbers %s ~ %s", time_seq.str().c_str(), img_seq.str().c_str());
 
     return 0;
   }
