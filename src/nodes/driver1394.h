@@ -111,6 +111,8 @@ private:
 
   /** Non-recursive mutex for serializing callbacks with device polling. */
   boost::mutex mutex_;
+  boost::mutex img_mutex_;
+  boost::mutex time_mutex_;
 
   /** driver state variables */
   volatile driver_base::Driver::state_t state_; // current driver state
@@ -136,6 +138,7 @@ private:
   /** image transport interfaces */
   boost::shared_ptr<image_transport::ImageTransport> it_;
   image_transport::CameraPublisher image_pub_;
+  image_transport::CameraPublisher image_pub_debug_;
   ros::Publisher ros_trig_wait_pub_;
   ros::Subscriber ros_timestamp_sub_;
 

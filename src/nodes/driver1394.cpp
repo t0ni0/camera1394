@@ -84,6 +84,7 @@ namespace camera1394_driver
     calibration_matches_(true),
     it_(new image_transport::ImageTransport(camera_nh_)),
     image_pub_(it_->advertiseCamera("image_raw", 10)),
+    image_pub_debug_(it_->advertiseCamera("image_raw_debug", 10)),
     ros_trig_wait_pub_(camera_nh.advertise<std_msgs::Int16>("waiting_trigger", 100)),
     ros_timestamp_sub_(camera_nh.subscribe("/mavros/cam_imu_sync/cam_imu_stamp",
         1, &Camera1394Driver::bufferTimestamp, this)),
@@ -276,17 +277,18 @@ namespace camera1394_driver
     ci->header.seq = image->header.seq = ros_frame_count_++;
 
     // Publish via image_transport
-    //image_pub_.publish(image, ci);
+    image_pub_debug_.publish(image, ci);
 
     // Publishing is disabled here because the trigger sync thread will
     // do that for us. Instead we buffer the image and in camera info
     // for the sync thread to use.
+    img_mutex_.lock();
     image_buffer_.push_back(image);
     cinfo_buffer_.push_back(ci);
 
-    if(image_buffer_.size() > 5) image_buffer_.erase(image_buffer_.begin());
-    if(cinfo_buffer_.size() > 5) cinfo_buffer_.erase(cinfo_buffer_.begin());
-
+    if(image_buffer_.size() > 10) image_buffer_.erase(image_buffer_.begin());
+    if(cinfo_buffer_.size() > 10) cinfo_buffer_.erase(cinfo_buffer_.begin());
+    img_mutex_.unlock();
 
     // Notify diagnostics that a message has been published. That will
     // generate a warning if messages are not published at nearly the
@@ -543,6 +545,7 @@ namespace camera1394_driver
    */
   void Camera1394Driver::bufferTimestamp(const mavros_msgs::CamIMUStamp& msg)
   {
+    time_mutex_.lock();
     timestamp_buffer_.push_back(msg);
 
     // TODO Add half of exposure time
@@ -550,10 +553,10 @@ namespace camera1394_driver
 
     // Check if buffer exceeds limit size
     // Throw away oldest image if it does
-    if(timestamp_buffer_.size() > 5){
+    if(timestamp_buffer_.size() > 10){
         timestamp_buffer_.erase(timestamp_buffer_.begin());
     }
-
+    time_mutex_.unlock();
   }
 
   /**
@@ -588,7 +591,7 @@ namespace camera1394_driver
   void Camera1394Driver::framePublishLoop()
   {
     //ROS_INFO("frame publish looped");
-    ros::Rate idleDelay(200);
+    ros::Rate idleDelay(50);
 
     while( ros::ok() && vio_thread_alive_ ){
       // check if buffers are not empty
@@ -638,8 +641,10 @@ namespace camera1394_driver
   {
     // find the index of the imu timestamp corresponding to the image we
     // want to publish
+    img_mutex_.lock();
+    time_mutex_.lock();
     int timestamp_index = findInImgBuffer(index);
-
+    int ret = 0;
     // if we found the appropriate timestamp
     if (timestamp_index) {
         // Copy corresponding image and time stamps
@@ -659,12 +664,14 @@ namespace camera1394_driver
         image_buffer_.erase(image_buffer_.begin() + index);
         cinfo_buffer_.erase(cinfo_buffer_.begin() + index);
         timestamp_buffer_.erase(timestamp_buffer_.begin() + timestamp_index);
-        return 0;
     } else {
         // Failure
         //ROS_WARN("findInImgBuffer failed");
-        return 1;
+        ret = 1;
     }
+    img_mutex_.unlock();
+    time_mutex_.unlock();
+    return ret;
   }
 
   /**
@@ -696,6 +703,7 @@ namespace camera1394_driver
         }
     }
 
+/*
     //failure handler
     std::ostringstream time_seq, img_seq;
     for(int i = 0; i < timestamp_buffer_.size(); ++i){
@@ -706,8 +714,8 @@ namespace camera1394_driver
       img_seq << image_buffer_.at(i)->header.seq << ' ';
     }
 
-    //ROS_INFO("findInImgBuffer seq numbers %s ~ %s", time_seq.str().c_str(), img_seq.str().c_str());
-
+    ROS_INFO("findInImgBuffer seq numbers %s ~ %s", time_seq.str().c_str(), img_seq.str().c_str());
+*/
     return 0;
   }
 
