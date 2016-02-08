@@ -478,6 +478,10 @@ bool Camera1394::readData(sensor_msgs::Image& image)
   else
     image.header.stamp = ros::Time((double) frame->timestamp / 1000000.0);
 
+
+  // by using the frame id we prevent sequence number sync errors
+  image.header.seq = frame->id;
+
   dc1394video_frame_t frame2;
 
   if (DoBayerConversion_)

@@ -77,7 +77,6 @@ namespace camera1394_driver
     camera_name_("camera"),
     cycle_(1.0),                        // slow poll when closed
     retries_(0),
-    ros_frame_count_(0),
     dev_(new camera1394::Camera1394()),
     srv_(priv_nh),
     cinfo_(new camera_info_manager::CameraInfoManager(camera_nh_)),
@@ -273,7 +272,7 @@ namespace camera1394_driver
 
     ci->header.frame_id = config_.frame_id;
     ci->header.stamp = image->header.stamp;
-    ci->header.seq = image->header.seq = ros_frame_count_++;
+    ci->header.seq = image->header.seq; // the image has the right seq number given by the camera
 
     // Publish via image_transport
     //image_pub_.publish(image, ci);

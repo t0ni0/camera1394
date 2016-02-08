@@ -120,7 +120,6 @@ private:
   std::string camera_name_;             // camera name
   ros::Rate cycle_;                     // polling rate when closed
   uint32_t retries_;                    // count of openCamera() retries
-  unsigned int ros_frame_count_;
 
   /** libdc1394 camera device interface */
   boost::shared_ptr<camera1394::Camera1394> dev_;
