@@ -563,6 +563,7 @@ namespace camera1394_driver
   void Camera1394Driver::sendTriggerReady()
   {
     std_srvs::Trigger sig;
+    trigger_ready_srv_.waitForExistence();
     if(!trigger_ready_srv_.call(sig)){
         ROS_ERROR("Failed to call ready-for-trigger on service: %s",
                     trigger_ready_srv_.getService().c_str() );
