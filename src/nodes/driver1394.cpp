@@ -688,6 +688,7 @@ namespace camera1394_driver
     unsigned int k = 0;
     while(k < timestamp_buffer_.size() && ros::ok()){
         // look for the matching sequence number
+        // if (index != 0) ROS_INFO("Index: %d\tImage buffer seq: %d\tTimestamp buffer seq: %d", index, image_buffer_.at(index)->header.seq, timestamp_buffer_.at(k).frame_seq_id);
         if(image_buffer_.at(index)->header.seq ==
                 (uint)timestamp_buffer_.at(k).frame_seq_id) {
             return k;
@@ -697,14 +698,14 @@ namespace camera1394_driver
     }
 
     //failure handler
-    std::ostringstream time_seq, img_seq;
-    for(int i = 0; i < timestamp_buffer_.size(); ++i){
-      time_seq << timestamp_buffer_.at(i).frame_seq_id << ' ';
-    }
-
-    for(int i = 0; i < image_buffer_.size(); ++i){
-      img_seq << image_buffer_.at(i)->header.seq << ' ';
-    }
+//    std::ostringstream time_seq, img_seq;
+//    for(int i = 0; i < timestamp_buffer_.size(); ++i){
+//      time_seq << timestamp_buffer_.at(i).frame_seq_id << ' ';
+//    }
+//
+//    for(int i = 0; i < image_buffer_.size(); ++i){
+//      img_seq << image_buffer_.at(i)->header.seq << ' ';
+//    }
 
     //ROS_INFO("findInImgBuffer seq numbers %s ~ %s", time_seq.str().c_str(), img_seq.str().c_str());
 

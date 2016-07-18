@@ -16,9 +16,8 @@ public:
     TriggerReady()
     {
         cam0_OK_ = false;
-        cam1_OK_ = false;
         exposure_ms_ = 0;
-        framerate_ = 30; //** in Hz, default framerate
+        framerate_ = 20; //** in Hz, default framerate
         triggerClient_ = n_.serviceClient<mavros_msgs::CommandTriggerControl>("/mavros/cmd/trigger_control");
         advertiseService();
         subscribeCameras();
@@ -39,15 +38,6 @@ public:
     }
 
     /**
-     * @brief cam1Ready
-     * @param msg
-     */
-    void cam1Ready(const std_msgs::Int16ConstPtr &msg)
-    {
-        ROS_INFO("Camera 1 waiting for trigger. Exposure set to %u ms", exposure_ms_); //XXX check if the exposures aren't same.
-    }
-
-    /**
      * @brief Subscribe to the trigger waiting topics. These topics receive an
      * Int16 which is the exposure in milliseconds requested for the next trigger
      * pulse.
@@ -55,7 +45,6 @@ public:
     void subscribeCameras()
     {
         cam0_Sub_ = n_.subscribe("cam0/waiting_trigger", 0, &TriggerReady::cam0Ready, this);
-        cam1_Sub_ = n_.subscribe("cam1/waiting_trigger", 0, &TriggerReady::cam1Ready, this);
     }
 
     /**
@@ -74,36 +63,12 @@ public:
     }
 
     /**
-     * @brief Callback for cam1 trigger ready service
-     *        Mark the cam1 as ready to be triggered
-     * @param req
-     * @param resp
-     * @return
-     */
-    bool servCam1(std_srvs::Trigger::Request &req, std_srvs::Trigger::Response &resp)
-    {
-        cam1_OK_ = true;
-        resp.success = true;
-        ROS_INFO_STREAM("Camera 1 is primed for trigger");
-        return true;
-    }
-
-    /**
      * @brief Tells you if cam0 is ready for triggering
      * @return
      */
     bool cam0_OK()
     {
         return cam0_OK_;
-    }
-
-    /**
-     * @brief Tells you if cam1 is ready for triggering
-     * @return
-     */
-    bool cam1_OK()
-    {
-        return cam1_OK_;
     }
 
     /**
@@ -133,34 +98,30 @@ public:
     void advertiseService()
     {
         serverCam0_ = n_.advertiseService("cam0/camera/trigger_ready", &TriggerReady::servCam0, this);
-        serverCam1_ = n_.advertiseService("cam1/camera/trigger_ready", &TriggerReady::servCam1, this);
     }
 
 
 private:
 
     bool cam0_OK_;
-    bool cam1_OK_;
     int exposure_ms_;
     int framerate_;
 
     ros::NodeHandle n_;
 
     ros::Subscriber cam0_Sub_;
-    ros::Subscriber cam1_Sub_;
 
     ros::ServiceClient triggerClient_;
     mavros_msgs::CommandTriggerControl srv_;
 
     ros::ServiceServer serverCam0_;
-    ros::ServiceServer serverCam1_;
 
 };
 
 
 /**
- * @brief This application will spin while waiting for the two camera drives to
- * come up. Once they are alive, the trigger command is sent at a rate of 10Hz
+ * @brief This application will spin while waiting for the camera driver to
+ * come up. Once it is alive, the trigger command is sent at a rate of 10Hz
  * through mavros.
  * @param argc ros argument count
  * @param argv ros arguments
@@ -174,13 +135,18 @@ int main(int argc, char **argv)
     // Define time update rate to call callback function if necessary
     ros::Rate r(100); // Hz
 
-    while (!(tr.cam0_OK() && tr.cam1_OK()) && ros::ok()) {
+    while (!tr.cam0_OK() && ros::ok()) {
         ros::spinOnce();
         r.sleep();
     }
 
     // Send start trigger command to Pixhawk
     ros::Rate r2(10); // Hz
+
+    if (!ros::service::exists("/mavros/cmd/trigger_control", true)) {
+        ROS_INFO_STREAM("Waiting for trigger_control service to be available...");
+        ros::service::waitForService("/mavros/cmd/trigger_control");
+    }
 
     while (tr.sendTriggerCommand() && ros::ok()) {
         ROS_INFO_STREAM("Retrying reaching pixhawk");
